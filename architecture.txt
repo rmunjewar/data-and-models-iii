@@ -1,0 +1,145 @@
+============================================================
+  SYSTEM ARCHITECTURE — HOW THE PARTS CONNECT
+============================================================
+
+  model.ipynb
+  -----------
+  - Loads raw employee dataset
+  - Trains a Ridge regression pipeline to predict
+    turnover_probability_generated (0.0 – 1.0)
+  - Exports the processed DataFrame to:  trimmed_data  (CSV)
+            |
+            | writes
+            v
+       trimmed_data  (CSV)
+       - One row per employee
+       - 17 numerical features (stress_level, workload_score, etc.)
+       - 2 categorical features (job_level, department)
+       - 4 text fields (recent_feedback, risk_factors_summary, etc.)
+       - turnover_probability_generated  <-- the ML model's output
+            |
+            | read by
+            v
+  llm.py  (FastAPI server)
+  -------------------------
+  load_employee_data()
+    reads trimmed_data CSV into a DataFrame
+
+  build_employee_context(row)
+    packages a single row into a JSON dict for the LLM
+    (numerical features + text fields + ML probability)
+
+  generate_recommendation(employee_data)
+    sends the dict to Groq (LLaMA 3.1 8B Instant)
+    gets back structured JSON:
+      {
+        employee_id, risk_level, turnover_probability,
+        key_risk_factors, recommendations
+      }
+
+  HTTP endpoints  (CORS open — any frontend can call these)
+  ----------------------------------------------------------
+  GET /api/health
+      returns:
+        {
+          "status": "ok",
+          "model": "llama-3.1-8b-instant",
+          "data_loaded": true,
+          "employee_count": 51000
+        }
+
+  GET /api/employees?limit=20&sort_by_risk=true
+      returns: list of employees sorted by turnover probability
+      used by: frontend employee table / selector
+        [
+          {
+            "employee_id": "SYN_00420291",
+            "role": "Product Manager",
+            "department": "Legal",
+            "job_level": "Manager",
+            "turnover_probability": 0.82
+          },
+          ...
+        ]
+
+  GET /api/recommendations/{employee_id}
+      returns: LLM recommendation for one employee
+      used by: frontend "manager view" when clicking a row
+        {
+          "employee_id": "SYN_00420291",
+          "risk_level": "High",
+          "turnover_probability": 0.82,
+          "key_risk_factors": [
+            "Severe Burnout Risk",
+            "High stress level (0.98)",
+            "Recent feedback indicates feeling overwhelmed"
+          ],
+          "recommendations": [
+            "Schedule a 1-on-1 this week to discuss workload and reprioritize tasks together.",
+            "Offer flexible working hours or remote days to reduce commute and improve work-life balance.",
+            "Enroll the employee in a stress management workshop and block 2hrs/week for personal development."
+          ]
+        }
+
+  GET /api/recommendations?limit=5
+      returns: array of the above shape, one object per top-risk employee
+      used by: frontend "At-Risk Overview" dashboard widget
+            |
+            | JSON over HTTP
+            v
+  Frontend
+  --------
+  fetch("http://127.0.0.1:8000/api/recommendations/SYN_TEST_001")
+  → gets back risk level, risk factors, 3 recommendations
+  → renders in manager dashboard
+
+
+============================================================
+  FULL DATA FLOW (one request)
+============================================================
+
+  1. Frontend calls  GET /api/recommendations/SYN_TEST_001
+  2. llm.py loads trimmed_data CSV
+  3. Finds the row where employee_id == SYN_TEST_001
+  4. build_employee_context() packages 20+ fields into a dict
+  5. generate_recommendation() sends dict to Groq API
+  6. LLaMA 3.1 8B reads the ML probability + employee context
+  7. Returns structured JSON (risk level + 3 recommendations)
+  8. FastAPI validates it against RecommendationResponse model
+  9. Frontend receives clean JSON, renders to screen
+
+
+============================================================
+  ABOUT THE TEST DATA (trimmed_data)
+============================================================
+
+  model.ipynb has NOT been run yet in this repo, so there was
+  no real trimmed_data CSV on disk. To unblock API testing I
+  manually created two hand-crafted employees — NOT random.
+
+  The values were taken directly from the first rows visible
+  in model.ipynb's notebook output (the DataFrame preview cells).
+
+  SYN_TEST_001 — HIGH RISK employee
+    Based on the first notebook row (SYN_00420291 / QuietAchiever)
+    stress_level:          0.98   (near-max)
+    burnout_risk:          0.97   (near-max)
+    satisfaction_score:    0.91   (high — "anomaly" case)
+    turnover_probability:  0.82   (High tier >= 0.6)
+    risk_factors_summary:  "Severe Burnout Risk"
+    recent_feedback:       "Feeling overwhelmed"
+    Purpose: verify the LLM correctly flags High risk and
+             produces burnout-focused recommendations
+
+  SYN_TEST_002 — LOW RISK employee
+    Invented as a clean contrast case
+    stress_level:          0.30   (low)
+    burnout_risk:          0.10   (low)
+    satisfaction_score:    0.75   (healthy)
+    turnover_probability:  0.15   (Low tier < 0.3)
+    risk_factors_summary:  "Low Risk"
+    Purpose: verify the API works for non-critical employees
+             and that risk_level comes back as "Low"
+
+  Once model.ipynb is run, trimmed_data will be replaced with
+  the full real dataset and these two rows disappear.

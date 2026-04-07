@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+groq
+pandas
+python-dotenv
+pydantic
+scikit-learn
+matplotlib
+numpy
