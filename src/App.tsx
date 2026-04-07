@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Upload from "./pages/Upload";
 import Company from "./pages/Company";
 import Employee from "./pages/Employee";
+import Footer from "./components/Footer";
 import { useStore } from "./store";
 
 function RequireContext({ children }: { children: JSX.Element }) {
@@ -49,6 +50,7 @@ export default function App() {
           }
         />
       </Routes>
+      <Footer />
     </div>
   );
 }

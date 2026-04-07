@@ -22,7 +22,7 @@ export default function Login() {
   };
 
   return (
-    <div className="card" style={{ maxWidth: 640, margin: "60px auto" }}>
+    <div className="card" style={{ maxWidth: 640, margin: "60px auto", padding: "40px 44px" }}>
       <h1>TeamPulse</h1>
       <p className="muted">Tell us about your company so we can tailor recommendations.</p>
       <form onSubmit={submit} style={{ marginTop: 20 }}>
